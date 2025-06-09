@@ -1,0 +1,92 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.spyderproject
+.spyproject
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Project specific - 隐私和临时文件
+uploads/
+results/
+.env
+.env.local
+.env.*.local
+
+# API Keys and Secrets (额外保护)
+config.py
+secrets.json
+*.key
+*.pem
+
+# Logs
+*.log
+logs/
+
+# Flask
+instance/
+.webassets-cache
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Database files (如果将来使用数据库)
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# Backup files
+*.bak
+*.backup
+*~ 
