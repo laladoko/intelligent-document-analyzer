@@ -65,19 +65,33 @@ def analyze_with_openai(text):
         client = openai.OpenAI(api_key=api_key)
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[
                 {
                     "role": "system", 
-                    "content": "你是一个文档分析专家。请分析提供的文档内容，提取关键信息，包括：主题、核心观点、重要细节、结论等。请用简洁明了的中文回复。"
+                    "content": """智能体需要提取并凝练企业文件中的关键信息，补全对企业的简洁描述，内容包含：企业历史、已经完成的主要项目、核心产品及服务。
+
+1. 读取企业提供的所有文件，识别并抽取以下信息：
+   - 企业历史及背景
+   - 主要完成的项目及成果
+   - 核心产品及服务内容
+2. 将以上信息用简洁、条理清晰的语言总结，确保：
+   - 描述简明扼要，避免冗长细节
+   - 重点突出企业能力和服务范围
+3. 输出格式为：
+   公司名称：
+   成立时间：
+   主要项目：
+   核心产品与服务：
+4. 最终生成的文字将作为客服机器人对话内容的基础，确保它可以快速响应客户关于企业产品和服务的提问。"""
                 },
                 {
                     "role": "user", 
-                    "content": f"请分析以下文档内容并提取核心信息：\n\n{text[:4000]}..."  # 限制长度避免token超限
+                    "content": f"请分析以下企业文档内容并按照指定格式提取关键信息：\n\n{text[:8000]}..."  # GPT-4支持更长的输入
                 }
             ],
-            max_tokens=1000,
-            temperature=0.7
+            max_tokens=1500,
+            temperature=0.3
         )
         
         return response.choices[0].message.content
@@ -103,7 +117,7 @@ def generate_xml_summary(filename, original_text, ai_summary):
     # AI分析结果
     analysis = etree.SubElement(root, "ai_analysis")
     etree.SubElement(analysis, "summary").text = ai_summary
-    etree.SubElement(analysis, "model_used").text = "gpt-3.5-turbo"
+    etree.SubElement(analysis, "model_used").text = "gpt-4"
     
     # 格式化XML
     xml_str = etree.tostring(root, pretty_print=True, encoding='unicode')
@@ -315,7 +329,7 @@ def generate_batch_xml_summary(all_texts, ai_summary, total_word_count):
     # AI综合分析结果
     analysis = etree.SubElement(root, "comprehensive_analysis")
     etree.SubElement(analysis, "summary").text = ai_summary
-    etree.SubElement(analysis, "model_used").text = "gpt-3.5-turbo"
+    etree.SubElement(analysis, "model_used").text = "gpt-4"
     etree.SubElement(analysis, "analysis_scope").text = f"综合分析了 {len(all_texts)} 个文档"
     
     # 格式化XML
