@@ -7,9 +7,15 @@ from lxml import etree
 import openai
 from datetime import datetime
 from dotenv import load_dotenv
+import time
+import logging
 
 # 加载环境变量
 load_dotenv()
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx', 'doc'}
 
@@ -42,33 +48,40 @@ def extract_text_from_file(file_path: str, filename: str) -> str:
             return text
     
     except Exception as e:
+        logger.error(f"文件读取错误: {str(e)}")
         raise Exception(f"文件读取错误: {str(e)}")
 
 def analyze_with_openai(text: str) -> str:
     """使用OpenAI GPT-4o分析文档内容"""
-    try:
-        # 获取API密钥
-        api_key = os.getenv('OPENAI_API_KEY')
-        if not api_key:
-            raise Exception("请设置 OPENAI_API_KEY 环境变量")
-        
-        # 创建OpenAI客户端，增加超时时间
-        client = openai.OpenAI(
-            api_key=api_key,
-            timeout=120.0  # 增加超时时间到120秒
-        )
-        
-        # 限制文本长度，避免超时
-        max_text_length = 8000
-        if len(text) > max_text_length:
-            text = text[:max_text_length] + "\n\n[文档内容因长度限制已截断...]"
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",  # 使用gpt-4o模型
-            messages=[
-                {
-                    "role": "system", 
-                    "content": """你是一个专业的企业文档分析专家。请仔细分析企业文档，提取关键信息并按照指定格式输出。
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            # 获取API密钥
+            api_key = os.getenv('OPENAI_API_KEY')
+            if not api_key:
+                raise Exception("请设置 OPENAI_API_KEY 环境变量")
+            
+            # 创建OpenAI客户端，增加超时时间
+            client = openai.OpenAI(
+                api_key=api_key,
+                timeout=150.0  # 增加超时时间到150秒
+            )
+            
+            # 限制文本长度，避免超时
+            max_text_length = 6000  # 减少文本长度限制
+            if len(text) > max_text_length:
+                text = text[:max_text_length] + "\n\n[文档内容因长度限制已截断...]"
+            
+            logger.info(f"开始OpenAI分析，尝试第 {attempt + 1} 次")
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",  # 使用gpt-4o模型
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": """你是一个专业的企业文档分析专家。请仔细分析企业文档，提取关键信息并按照指定格式输出。
 
 分析要求：
 1. 仔细阅读所有提供的文档内容
@@ -102,46 +115,73 @@ def analyze_with_openai(text: str) -> str:
 - 描述要客观、准确，避免过度夸大
 - 重点突出企业的核心能力和差异化优势
 - 内容要适合作为客服机器人的知识库，便于快速响应客户询问"""
-                },
-                {
-                    "role": "user", 
-                    "content": f"请分析以下企业文档内容，按照指定格式提取并整理企业关键信息：\n\n{text}"
-                }
-            ],
-            max_tokens=3000,
-            temperature=0.2
-        )
+                    },
+                    {
+                        "role": "user", 
+                        "content": f"请分析以下企业文档内容，按照指定格式提取并整理企业关键信息：\n\n{text}"
+                    }
+                ],
+                max_tokens=2500,  # 减少max_tokens
+                temperature=0.2
+            )
+            
+            logger.info("OpenAI分析完成")
+            return response.choices[0].message.content
         
-        return response.choices[0].message.content
+        except openai.RateLimitError as e:
+            logger.warning(f"OpenAI API限流，等待重试... (尝试 {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (attempt + 1))
+                continue
+            raise Exception(f"OpenAI API限流，请稍后重试: {str(e)}")
+        
+        except openai.APITimeoutError as e:
+            logger.warning(f"OpenAI API超时，等待重试... (尝试 {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
+            raise Exception(f"OpenAI API调用超时，请稍后重试: {str(e)}")
+        
+        except Exception as e:
+            logger.error(f"OpenAI API调用错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
+            raise Exception(f"OpenAI API调用错误: {str(e)}")
     
-    except Exception as e:
-        raise Exception(f"OpenAI API调用错误: {str(e)}")
+    raise Exception("OpenAI API调用失败，已重试3次")
 
 def analyze_with_openai_xml(text: str) -> str:
     """使用OpenAI GPT-4o分析文档内容并输出XML格式"""
-    try:
-        # 获取API密钥
-        api_key = os.getenv('OPENAI_API_KEY')
-        if not api_key:
-            raise Exception("请设置 OPENAI_API_KEY 环境变量")
-        
-        # 创建OpenAI客户端，增加超时时间
-        client = openai.OpenAI(
-            api_key=api_key,
-            timeout=120.0  # 增加超时时间到120秒
-        )
-        
-        # 限制文本长度，避免超时
-        max_text_length = 8000
-        if len(text) > max_text_length:
-            text = text[:max_text_length] + "\n\n[文档内容因长度限制已截断...]"
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",  # 使用gpt-4o模型
-            messages=[
-                {
-                    "role": "system", 
-                    "content": """你是一个专业的企业文档分析专家。请分析企业文档并输出结构化的企业信息，以便在文本中展示XML格式内容。
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            # 获取API密钥
+            api_key = os.getenv('OPENAI_API_KEY')
+            if not api_key:
+                raise Exception("请设置 OPENAI_API_KEY 环境变量")
+            
+            # 创建OpenAI客户端，增加超时时间
+            client = openai.OpenAI(
+                api_key=api_key,
+                timeout=150.0  # 增加超时时间到150秒
+            )
+            
+            # 限制文本长度，避免超时
+            max_text_length = 6000  # 减少文本长度限制
+            if len(text) > max_text_length:
+                text = text[:max_text_length] + "\n\n[文档内容因长度限制已截断...]"
+            
+            logger.info(f"开始OpenAI XML分析，尝试第 {attempt + 1} 次")
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",  # 使用gpt-4o模型
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": """你是一个专业的企业文档分析专家。请分析企业文档并输出结构化的企业信息，以便在文本中展示XML格式内容。
 
 输出要求：
 1. 仔细分析文档内容，提取企业关键信息
@@ -180,20 +220,41 @@ def analyze_with_openai_xml(text: str) -> str:
 ```
 
 请按照上述格式输出XML文本内容，使其易于在文本编辑器中查看和编辑。"""
-                },
-                {
-                    "role": "user", 
-                    "content": f"请分析以下企业文档内容，输出结构化的XML文本格式企业信息：\n\n{text}"
-                }
-            ],
-            max_tokens=3000,
-            temperature=0.2
-        )
+                    },
+                    {
+                        "role": "user", 
+                        "content": f"请分析以下企业文档内容，输出结构化的XML文本格式企业信息：\n\n{text}"
+                    }
+                ],
+                max_tokens=2500,  # 减少max_tokens
+                temperature=0.2
+            )
+            
+            logger.info("OpenAI XML分析完成")
+            return response.choices[0].message.content
         
-        return response.choices[0].message.content
+        except openai.RateLimitError as e:
+            logger.warning(f"OpenAI API限流，等待重试... (尝试 {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (attempt + 1))
+                continue
+            raise Exception(f"OpenAI API限流，请稍后重试: {str(e)}")
+        
+        except openai.APITimeoutError as e:
+            logger.warning(f"OpenAI API超时，等待重试... (尝试 {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
+            raise Exception(f"OpenAI API调用超时，请稍后重试: {str(e)}")
+        
+        except Exception as e:
+            logger.error(f"OpenAI API调用错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
+            raise Exception(f"OpenAI API调用错误: {str(e)}")
     
-    except Exception as e:
-        raise Exception(f"OpenAI API调用错误: {str(e)}")
+    raise Exception("OpenAI API调用失败，已重试3次")
 
 def generate_xml_summary(filename: str, original_text: str, ai_summary: str) -> str:
     """生成XML格式的分析摘要"""

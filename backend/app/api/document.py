@@ -98,7 +98,10 @@ async def upload_document(
             "status": "success"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"文档上传分析错误: {str(e)}")
         raise HTTPException(status_code=500, detail=f"文档分析失败: {str(e)}")
 
 @router.post("/upload-xml")
@@ -170,7 +173,10 @@ async def upload_document_xml(
             "status": "success"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"文档XML上传分析错误: {str(e)}")
         raise HTTPException(status_code=500, detail=f"文档XML分析失败: {str(e)}")
 
 @router.post("/batch-upload")
@@ -401,4 +407,33 @@ async def list_analysis_results(
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取结果列表失败: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"获取结果列表失败: {str(e)}")
+
+@router.get("/health")
+async def health_check():
+    """健康检查端点"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "upload_folder_exists": os.path.exists(UPLOAD_FOLDER),
+        "results_folder_exists": os.path.exists(RESULTS_FOLDER),
+        "openai_key_configured": bool(os.getenv('OPENAI_API_KEY'))
+    }
+
+@router.get("/debug/auth")
+async def debug_auth(
+    current_user: Union[User, dict] = Depends(get_current_user_or_guest)
+):
+    """调试认证信息"""
+    if isinstance(current_user, User):
+        return {
+            "user_type": "authenticated_user",
+            "user_id": current_user.id,
+            "username": current_user.username,
+            "is_active": current_user.is_active
+        }
+    else:
+        return {
+            "user_type": "guest_user",
+            "user_data": current_user
+        } 

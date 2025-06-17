@@ -148,31 +148,55 @@ class KnowledgeService:
         question: str,
         user_id: Optional[int] = None,
         session_id: Optional[str] = None,
-        is_guest: bool = False
+        is_guest: bool = False,
+        knowledge_ids: Optional[List[int]] = None
     ) -> Dict[str, Any]:
         """基于知识库回答问题"""
         start_time = time.time()
         
-        # 搜索相关知识
-        search_request = KnowledgeSearchRequest(
-            query=question,
-            limit=5
-        )
-        search_result = KnowledgeService.search_knowledge(db, search_request)
-        
         # 构建上下文
         context_items = []
-        knowledge_ids = []
+        used_knowledge_ids = []
         
-        for item in search_result["knowledge_items"]:
-            context_items.append(f"标题: {item.title}\n内容: {item.content[:500]}...")
-            knowledge_ids.append(item.id)
+        if knowledge_ids and len(knowledge_ids) > 0:
+            # 使用指定的知识文档作为上下文
+            specified_knowledge = db.query(KnowledgeBase).filter(
+                KnowledgeBase.id.in_(knowledge_ids),
+                KnowledgeBase.is_active == True
+            ).all()
+            
+            for item in specified_knowledge:
+                context_items.append(f"文档标题: {item.title}\n文档内容: {item.content}")
+                used_knowledge_ids.append(item.id)
+                
+            if not context_items:
+                # 如果指定的文档都无效，则进行搜索
+                search_request = KnowledgeSearchRequest(
+                    query=question,
+                    limit=3
+                )
+                search_result = KnowledgeService.search_knowledge(db, search_request)
+                
+                for item in search_result["knowledge_items"]:
+                    context_items.append(f"文档标题: {item.title}\n文档内容: {item.content[:800]}...")
+                    used_knowledge_ids.append(item.id)
+        else:
+            # 搜索相关知识
+            search_request = KnowledgeSearchRequest(
+                query=question,
+                limit=5
+            )
+            search_result = KnowledgeService.search_knowledge(db, search_request)
+            
+            for item in search_result["knowledge_items"]:
+                context_items.append(f"文档标题: {item.title}\n文档内容: {item.content[:800]}...")
+                used_knowledge_ids.append(item.id)
         
-        context = "\n\n".join(context_items)
+        context = "\n\n=== 分隔符 ===\n\n".join(context_items)
         
         # 使用OpenAI生成回答
         try:
-            answer = KnowledgeService._generate_answer_with_openai(question, context)
+            answer = KnowledgeService._generate_answer_with_openai(question, context, len(context_items))
         except Exception as e:
             answer = f"抱歉，我暂时无法回答这个问题。错误信息：{str(e)}"
         
@@ -180,7 +204,7 @@ class KnowledgeService:
         response_time = int((time.time() - start_time) * 1000)
         
         qa_record = KnowledgeQA(
-            knowledge_id=knowledge_ids[0] if knowledge_ids else None,
+            knowledge_id=used_knowledge_ids[0] if used_knowledge_ids else None,
             question=question,
             answer=answer,
             user_id=user_id,
@@ -197,14 +221,26 @@ class KnowledgeService:
             "qa_id": qa_record.id,
             "question": question,
             "answer": answer,
-            "related_knowledge": knowledge_ids,
-            "response_time": response_time
+            "related_knowledge": used_knowledge_ids,
+            "response_time": response_time,
+            "context_count": len(context_items)
         }
     
     @staticmethod
-    def _generate_answer_with_openai(question: str, context: str) -> str:
+    def _generate_answer_with_openai(question: str, context: str, context_count: int = 1) -> str:
         """使用OpenAI生成回答"""
-        system_prompt = """你是一个企业知识库助手。基于提供的知识库内容回答用户问题。
+        if context_count > 1:
+            system_prompt = f"""你是一个企业知识库助手。基于提供的{context_count}个相关文档内容回答用户问题。
+
+规则：
+1. 综合分析多个文档的信息，给出全面准确的回答
+2. 如果多个文档有相关信息，请整合这些信息
+3. 如果文档间有冲突信息，请指出并分别说明
+4. 回答要条理清晰、重点突出
+5. 使用中文回答
+6. 在回答中可以适当注明信息来源（如"根据第一个文档"、"另一份资料显示"等）"""
+        else:
+            system_prompt = """你是一个企业知识库助手。基于提供的知识库内容回答用户问题。
 
 规则：
 1. 优先使用知识库中的信息回答
@@ -227,8 +263,8 @@ class KnowledgeService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=1000,
-                temperature=0.7
+                max_tokens=1500,
+                temperature=0.3
             )
             return response.choices[0].message.content.strip()
         except Exception as e:

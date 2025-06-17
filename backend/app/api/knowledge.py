@@ -79,7 +79,8 @@ async def ask_question(
             question=qa_request.question,
             user_id=user_id,
             session_id=session_id,
-            is_guest=is_guest
+            is_guest=is_guest,
+            knowledge_ids=qa_request.knowledge_ids
         )
         
         return KnowledgeQAResponse(

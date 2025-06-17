@@ -45,7 +45,7 @@ class KnowledgeBaseList(BaseSchema):
 # 问答相关模式
 class KnowledgeQACreate(BaseSchema):
     question: str = Field(..., min_length=1, description="问题")
-    knowledge_ids: Optional[List[int]] = Field(None, description="相关知识ID列表")
+    knowledge_ids: Optional[List[int]] = Field(None, description="指定的知识文档ID列表作为上下文")
 
 class KnowledgeQAResponse(BaseSchema):
     id: int

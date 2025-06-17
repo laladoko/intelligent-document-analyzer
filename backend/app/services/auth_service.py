@@ -28,7 +28,7 @@ LOCKOUT_DURATION_MINUTES = int(os.getenv("LOCKOUT_DURATION_MINUTES", "30"))
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # HTTP Bearer 认证
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 class AuthService:
     """认证服务类"""
@@ -334,12 +334,13 @@ async def get_current_user_or_guest(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户或游客"""
-    # 如果没有提供认证凭据，返回游客用户
+    """获取当前用户或游客用户，支持未登录用户访问"""
     if not credentials:
+        # 返回游客用户信息
         return {
-            "id": "guest",
-            "username": "游客用户",
+            "id": None,
+            "username": "guest",
+            "email": None,
             "is_guest": True,
             "role": "guest"
         }
@@ -347,63 +348,47 @@ async def get_current_user_or_guest(
     try:
         token = credentials.credentials
         payload = AuthService.verify_token(token)
+        
         if payload is None:
-            # 如果token无效，返回游客用户而不是抛出异常
+            # Token验证失败，返回游客用户
             return {
-                "id": "guest",
-                "username": "游客用户",
+                "id": None,
+                "username": "guest",
+                "email": None,
                 "is_guest": True,
                 "role": "guest"
             }
         
-        # 检查是否是游客令牌
-        if hasattr(payload, 'role') and payload.role == 'guest':
-            # 返回游客信息的字典
-            return {
-                "id": payload.sub,
-                "username": "游客用户",
-                "is_guest": True,
-                "role": "guest"
-            }
-        
-        # 处理真实用户
-        user = AuthService.get_user_by_id(db, payload.sub)
+        user = AuthService.get_user_by_id(db, int(payload.sub))
         if user is None:
-            # 如果用户不存在，返回游客用户
+            # 用户不存在，返回游客用户
             return {
-                "id": "guest",
-                "username": "游客用户",
+                "id": None,
+                "username": "guest", 
+                "email": None,
                 "is_guest": True,
                 "role": "guest"
             }
         
         if not user.is_active:
-            # 如果用户不活跃，返回游客用户
+            # 用户被禁用，返回游客用户
             return {
-                "id": "guest",
-                "username": "游客用户",
+                "id": None,
+                "username": "guest",
+                "email": None, 
                 "is_guest": True,
                 "role": "guest"
             }
         
-        if AuthService.is_user_locked(user):
-            # 如果用户被锁定，返回游客用户
-            return {
-                "id": "guest",
-                "username": "游客用户",
-                "is_guest": True,
-                "role": "guest"
-            }
-        
-        # 返回真实用户对象，添加is_guest标识
-        user.is_guest = False
         return user
         
     except Exception as e:
-        # 任何异常都返回游客用户
+        # 发生异常时返回游客用户，而不是抛出错误
+        print(f"Auth error, falling back to guest: {str(e)}")
         return {
-            "id": "guest",
-            "username": "游客用户",
+            "id": None,
+            "username": "guest",
+            "email": None,
             "is_guest": True,
             "role": "guest"
         } 

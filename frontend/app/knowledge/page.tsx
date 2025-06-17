@@ -56,6 +56,11 @@ export default function KnowledgePage() {
   const [authLoading, setAuthLoading] = useState(true)
   const [sessionId, setSessionId] = useState<string>('')
   
+  // 新增状态
+  const [selectedDocuments, setSelectedDocuments] = useState<Set<number>>(new Set())
+  const [showDocumentDetail, setShowDocumentDetail] = useState(false)
+  const [detailDocument, setDetailDocument] = useState<KnowledgeItem | null>(null)
+  
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 获取当前用户信息
@@ -257,7 +262,8 @@ export default function KnowledgePage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          question: question
+          question: question,
+          knowledge_ids: Array.from(selectedDocuments)
         })
       })
 
@@ -312,6 +318,29 @@ export default function KnowledgePage() {
     } catch (error) {
       console.error('处理预设问题失败:', error)
     }
+  }
+
+  // 处理文档选择
+  const handleDocumentSelect = (documentId: number, checked: boolean) => {
+    const newSelected = new Set(selectedDocuments)
+    if (checked) {
+      newSelected.add(documentId)
+    } else {
+      newSelected.delete(documentId)
+    }
+    setSelectedDocuments(newSelected)
+  }
+
+  // 查看文档详情
+  const handleViewDocumentDetail = (document: KnowledgeItem) => {
+    setDetailDocument(document)
+    setShowDocumentDetail(true)
+  }
+
+  // 关闭文档详情
+  const handleCloseDocumentDetail = () => {
+    setShowDocumentDetail(false)
+    setDetailDocument(null)
   }
 
   // 搜索输入处理
@@ -442,44 +471,62 @@ export default function KnowledgePage() {
                   {knowledgeItems.map((item) => (
                     <div
                       key={item.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selectedKnowledge?.id === item.id
+                      className={`p-3 rounded-lg border transition-colors ${
+                        selectedDocuments.has(item.id)
                           ? 'border-blue-500 bg-blue-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
-                      onClick={() => setSelectedKnowledge(item)}
                     >
-                      <h4 className="font-medium text-gray-900 text-sm mb-1">
-                        {item.title}
-                      </h4>
-                      {item.summary && (
-                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">
-                          {item.summary}
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <div className="flex items-center space-x-2">
-                          {item.tags && (
-                            <div className="flex items-center">
-                              <Tag className="h-3 w-3 mr-1" />
-                              <span>{item.tags.split(',').slice(0, 2).join(', ')}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="flex items-center">
-                            <Clock className="h-3 w-3 mr-1" />
-                            <span>{item.view_count} 次查看</span>
+                      <div className="flex items-start space-x-3">
+                        {/* 选择框 */}
+                        <input
+                          type="checkbox"
+                          checked={selectedDocuments.has(item.id)}
+                          onChange={(e) => handleDocumentSelect(item.id, e.target.checked)}
+                          className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        
+                        {/* 文档内容 */}
+                        <div className="flex-1 min-w-0">
+                          <div 
+                            className="cursor-pointer"
+                            onClick={() => handleViewDocumentDetail(item)}
+                          >
+                            <h4 className="font-medium text-gray-900 text-sm mb-1 hover:text-blue-600 transition-colors">
+                              {item.title}
+                            </h4>
+                            {item.summary && (
+                              <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                                {item.summary}
+                              </p>
+                            )}
                           </div>
-                          {item.source_file && (
-                            <div className="flex items-center">
-                              <span className="text-blue-500">📄 {item.source_file}</span>
+                          
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <div className="flex items-center space-x-2">
+                              {item.tags && (
+                                <div className="flex items-center">
+                                  <Tag className="h-3 w-3 mr-1" />
+                                  <span>{item.tags.split(',').slice(0, 2).join(', ')}</span>
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <div className="flex items-center space-x-2">
+                              <div className="flex items-center">
+                                <Clock className="h-3 w-3 mr-1" />
+                                <span>{item.view_count} 次查看</span>
+                              </div>
+                              {item.source_file && (
+                                <div className="flex items-center">
+                                  <span className="text-blue-500">📄 {item.source_file}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            上传时间: {new Date(item.created_at).toLocaleString('zh-CN')}
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1">
-                        上传时间: {new Date(item.created_at).toLocaleString('zh-CN')}
                       </div>
                     </div>
                   ))}
@@ -531,6 +578,42 @@ export default function KnowledgePage() {
                     <RefreshCw className="h-4 w-4" />
                   </button>
                 </div>
+                
+                {/* 选中的文档显示 */}
+                {selectedDocuments.size > 0 && (
+                  <div className="mt-3 p-2 bg-blue-50 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-blue-700 font-medium">
+                        已选择 {selectedDocuments.size} 个文档作为上下文
+                      </span>
+                      <button
+                        onClick={() => setSelectedDocuments(new Set())}
+                        className="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        清空选择
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {knowledgeItems
+                        .filter(item => selectedDocuments.has(item.id))
+                        .map(item => (
+                          <span 
+                            key={item.id}
+                            className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                          >
+                            {item.title.length > 20 ? item.title.substring(0, 20) + '...' : item.title}
+                            <button
+                              onClick={() => handleDocumentSelect(item.id, false)}
+                              className="ml-1 text-blue-600 hover:text-blue-800"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))
+                      }
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 对话内容 */}
@@ -644,6 +727,125 @@ export default function KnowledgePage() {
           </div>
         </div>
       </div>
+      
+      {/* 文档详情弹窗 */}
+      {showDocumentDetail && detailDocument && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            {/* 背景遮罩 */}
+            <div 
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              onClick={handleCloseDocumentDetail}
+            ></div>
+
+            {/* 弹窗内容 */}
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+              {/* 头部 */}
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    文档详情
+                  </h3>
+                  <button
+                    onClick={handleCloseDocumentDetail}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <span className="sr-only">关闭</span>
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* 文档信息 */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">文档标题</label>
+                    <p className="text-base text-gray-900">{detailDocument.title}</p>
+                  </div>
+
+                  {detailDocument.source_file && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">源文件</label>
+                      <p className="text-sm text-gray-600">{detailDocument.source_file}</p>
+                    </div>
+                  )}
+
+                  {detailDocument.summary && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">摘要</label>
+                      <p className="text-sm text-gray-600">{detailDocument.summary}</p>
+                    </div>
+                  )}
+
+                  {detailDocument.tags && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">标签</label>
+                      <div className="flex flex-wrap gap-2">
+                        {detailDocument.tags.split(',').map((tag, index) => (
+                          <span 
+                            key={index}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                          >
+                            {tag.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">查看次数</label>
+                      <p className="text-sm text-gray-600">{detailDocument.view_count} 次</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">上传时间</label>
+                      <p className="text-sm text-gray-600">
+                        {new Date(detailDocument.created_at).toLocaleString('zh-CN')}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">文档内容</label>
+                    <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                      <pre className="text-sm text-gray-700 whitespace-pre-wrap">
+                        {detailDocument.content}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 底部按钮 */}
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDocumentSelect(detailDocument.id, !selectedDocuments.has(detailDocument.id))
+                    handleCloseDocumentDetail()
+                  }}
+                  className={`w-full inline-flex justify-center rounded-md border px-4 py-2 text-base font-medium shadow-sm sm:ml-3 sm:w-auto sm:text-sm ${
+                    selectedDocuments.has(detailDocument.id)
+                      ? 'border-red-300 bg-red-600 text-white hover:bg-red-700'
+                      : 'border-blue-300 bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {selectedDocuments.has(detailDocument.id) ? '取消选择' : '选择为上下文'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCloseDocumentDetail}
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 } 
