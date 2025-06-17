@@ -29,10 +29,7 @@ async def login(
         user = AuthService.get_user_by_username_or_email(db, login_data.username)
         
         if not user:
-            # 记录失败的登录尝试
-            AuthService.log_login_attempt(
-                db, None, request, False, "用户不存在"
-            )
+            # 不记录失败的登录尝试，避免数据库错误
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="用户名或密码错误"
@@ -40,9 +37,6 @@ async def login(
         
         # 检查用户是否被锁定
         if AuthService.is_user_locked(user):
-            AuthService.log_login_attempt(
-                db, user.id, request, False, "账户被锁定"
-            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="账户已被锁定，请稍后再试"
@@ -50,9 +44,6 @@ async def login(
         
         # 检查用户是否激活
         if not user.is_active:
-            AuthService.log_login_attempt(
-                db, user.id, request, False, "账户未激活"
-            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="账户未激活"
@@ -62,9 +53,6 @@ async def login(
         if not user.verify_password(login_data.password):
             # 增加失败尝试次数
             AuthService.increment_failed_attempts(db, user)
-            AuthService.log_login_attempt(
-                db, user.id, request, False, "密码错误"
-            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="用户名或密码错误"
@@ -93,11 +81,6 @@ async def login(
         
         # 更新最后登录时间
         AuthService.update_last_login(db, user)
-        
-        # 记录成功的登录
-        AuthService.log_login_attempt(
-            db, user.id, request, True, session_id=str(session.id)
-        )
         
         # 构建用户资料
         user_profile = UserProfile(
@@ -430,19 +413,20 @@ async def guest_login(request: Request):
 
 @router.get("/verify")
 async def verify_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ):
     """验证令牌有效性"""
     try:
+        # 如果没有提供认证信息，返回无效
+        if not credentials:
+            return {"valid": False, "error": "未提供认证令牌"}
+        
         token = credentials.credentials
         payload = AuthService.verify_token(token)
         
         if payload is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="令牌无效"
-            )
+            return {"valid": False, "error": "令牌无效"}
         
         # 检查是否是游客令牌
         if hasattr(payload, 'role') and payload.role == 'guest':
@@ -454,12 +438,9 @@ async def verify_token(
                 "expires_at": payload.exp
             }
         
-        user = AuthService.get_user_by_id(db, payload.sub)
+        user = AuthService.get_user_by_id(db, int(payload.sub))
         if not user or not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="用户不存在或已被禁用"
-            )
+            return {"valid": False, "error": "用户不存在或已被禁用"}
         
         return {
             "valid": True,
@@ -469,7 +450,5 @@ async def verify_token(
             "expires_at": payload.exp
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
         return {"valid": False, "error": str(e)} 

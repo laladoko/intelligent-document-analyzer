@@ -5,6 +5,7 @@ import openai
 import json
 import uuid
 import time
+import os
 from datetime import datetime, timedelta
 
 from app.models.knowledge_base import KnowledgeBase, KnowledgeQA, PresetQuestion
@@ -257,7 +258,18 @@ class KnowledgeService:
 请基于上述知识库内容回答用户问题。"""
 
         try:
-            response = openai.ChatCompletion.create(
+            # 获取API密钥
+            api_key = os.getenv('OPENAI_API_KEY')
+            if not api_key:
+                raise Exception("请设置 OPENAI_API_KEY 环境变量")
+            
+            # 创建OpenAI客户端
+            client = openai.OpenAI(
+                api_key=api_key,
+                timeout=120.0
+            )
+            
+            response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
