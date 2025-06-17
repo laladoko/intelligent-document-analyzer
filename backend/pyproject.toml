@@ -1,0 +1,8 @@
+[build-system]
+requires = ["uv>=0.1.36"]
+build-backend = "uv.build"
+ 
+[project]
+name = "dataanalays-backend"
+version = "0.1.0"
+description = "企业文档智能分析 FastAPI 后端" 

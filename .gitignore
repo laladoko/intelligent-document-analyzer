@@ -1,4 +1,6 @@
-# Python
+# ================================
+# Python / FastAPI Backend
+# ================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,74 +21,164 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.pyc
 
-# Virtual Environment
+# ================================
+# Node.js / NextJS Frontend
+# ================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.next/
+out/
+dist/
+.cache/
+*.tsbuildinfo
+.turbo/
+
+# ================================
+# Virtual Environment & Package Management
+# ================================
+# Python virtual environments
 venv/
 env/
 ENV/
 .venv/
+.virtualenv/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-.spyderproject
-.spyproject
+# uv package manager
+.uv/
+uv.lock
 
-# OS
-.DS_Store
-Thumbs.db
-Desktop.ini
-
-# Project specific - 隐私和临时文件
-uploads/
-results/
+# ================================
+# Environment Variables & Secrets - CRITICAL
+# ================================
 .env
 .env.local
 .env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Backend specific env files
+backend/.env
+backend/.env.local
+backend/.env.production
 
 # API Keys and Secrets (额外保护)
 config.py
 secrets.json
 *.key
 *.pem
+*.p12
+*.crt
+secrets/
+config/secrets/
 
-# Logs
-*.log
-logs/
+# ================================
+# Project Specific - 隐私和用户数据
+# ================================
+# 用户上传的文件 (backend目录下)
+backend/uploads/
+uploads/
 
-# Flask
-instance/
-.webassets-cache
+# AI分析结果 (backend目录下)
+backend/results/
+results/
 
-# Temporary files
+# 临时处理文件
 temp/
 tmp/
 *.tmp
 *.temp
 
-# Database files (如果将来使用数据库)
-*.db
-*.sqlite
-*.sqlite3
+# ================================
+# IDE & Editor
+# ================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.spyderproject
+.spyproject
+*.sublime-project
+*.sublime-workspace
+
+# ================================
+# Operating System
+# ================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.lnk
+.AppleDouble
+.LSOverride
+Icon
+
+# ================================
+# Development Tools & Logs
+# ================================
+# Logs
+*.log
+logs/
+log/
+
+# FastAPI specific
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Coverage reports
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-
-# pytest
-.pytest_cache/
-
-# mypy
-.mypy_cache/
+# Documentation
+docs/_build/
 
 # Backup files
 *.bak
 *.backup
-*~ 
+*~
+*.orig
+
+# ================================
+# Dependency Lock Files
+# ================================
+# uv managed dependencies (keep requirements.txt, ignore lock files)
+requirements-dev.txt
+
+# ================================
+# Production & Deployment
+# ================================
+# Docker
+.dockerignore
+Dockerfile.prod
+
+# Production builds
+build/
+*.tar.gz
+
+# SSL certificates
+*.crt
+*.key
+*.pem
+
+# ================================
+# Testing & CI/CD
+# ================================
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.github/workflows/secrets.yml 
