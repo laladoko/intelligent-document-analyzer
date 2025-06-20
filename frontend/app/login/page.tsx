@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import { EyeIcon, EyeSlashIcon, UserIcon, LockClosedIcon } from '@heroicons/react/24/outline'
@@ -28,7 +28,7 @@ interface LoginResponse {
   }
 }
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [form, setForm] = useState<LoginForm>({
@@ -40,19 +40,55 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [guestLoading, setGuestLoading] = useState(false)
   const [error, setError] = useState('')
+  const [infoMessage, setInfoMessage] = useState('')
 
-  // 检查是否已登录
+  // 检查是否已登录并处理游客用户
   useEffect(() => {
     const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
-    if (token) {
-      router.push('/')
+    const userData = localStorage.getItem('user') || sessionStorage.getItem('user')
+    
+    // 检查是否从知识库跳转过来
+    const redirectFrom = searchParams.get('redirect')
+    if (redirectFrom === '/knowledge') {
+      setInfoMessage('知识库功能需要注册用户才能使用，请先登录或注册账户')
     }
-  }, [router])
+    
+    if (token && userData) {
+      try {
+        const user = JSON.parse(userData)
+        // 如果是游客用户访问登录页面，清除游客数据以便正常登录
+        if (user.is_guest === true) {
+          // 清除游客相关的session数据
+          sessionStorage.removeItem('access_token')
+          sessionStorage.removeItem('refresh_token')
+          sessionStorage.removeItem('user')
+          sessionStorage.removeItem('is_guest')
+          // 设置提示信息
+          if (!infoMessage) {
+            setInfoMessage('游客模式无法访问知识库，请登录注册用户账户')
+          }
+          return
+        }
+        // 如果是正常注册用户且有有效token，跳转到首页
+        router.push('/')
+      } catch (error) {
+        // 如果无法解析用户数据，清除所有认证信息
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('user')
+        sessionStorage.removeItem('access_token')
+        sessionStorage.removeItem('refresh_token')
+        sessionStorage.removeItem('user')
+        sessionStorage.removeItem('is_guest')
+      }
+    }
+  }, [router, searchParams, infoMessage])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setInfoMessage('')
 
     try {
       const response = await axios.post<LoginResponse>('/api/auth/login', form)
@@ -94,6 +130,7 @@ export default function LoginPage() {
   const handleGuestLogin = async () => {
     setGuestLoading(true)
     setError('')
+    setInfoMessage('')
 
     try {
       const response = await axios.post<LoginResponse>('/api/auth/guest-login')
@@ -144,6 +181,13 @@ export default function LoginPage() {
         {/* 登录表单 */}
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg p-8">
+            {/* 信息提示 */}
+            {infoMessage && (
+              <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+                <p className="text-sm text-blue-600 dark:text-blue-400">💡 {infoMessage}</p>
+              </div>
+            )}
+            
             {/* 错误提示 */}
             {error && (
               <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
@@ -303,4 +347,19 @@ export default function LoginPage() {
       </div>
     </div>
   )
-} 
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">正在加载登录页面...</p>
+        </div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
+  )
+}

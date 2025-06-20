@@ -233,7 +233,48 @@ async def get_current_user(
         if payload is None:
             raise credentials_exception
         
-        user = AuthService.get_user_by_id(db, payload.sub)
+        # 检查是否是游客用户（游客用户不存在于数据库中）
+        if hasattr(payload, 'role') and payload.role == 'guest':
+            # 为游客用户创建虚拟User对象
+            from app.models.user import UserRole
+            guest_role = UserRole(
+                id=0,
+                name="guest",
+                display_name="游客",
+                description="临时游客用户",
+                permissions='["read"]',
+                is_active=True,
+                created_at=datetime.now(),
+                updated_at=None
+            )
+            
+            # 创建虚拟游客用户对象
+            class GuestUser:
+                def __init__(self):
+                    self.id = int(payload.sub)
+                    self.username = "游客用户"
+                    self.email = "guest@temp.com"
+                    self.full_name = "游客用户"
+                    self.phone = None
+                    self.department = "游客"
+                    self.position = "访客"
+                    self.avatar_url = None
+                    self.role = guest_role
+                    self.role_id = 0
+                    self.is_active = True
+                    self.is_verified = False
+                    self.is_superuser = False
+                    self.last_login = None
+                    self.login_count = 0
+                    self.failed_login_attempts = 0
+                    self.locked_until = None
+                    self.created_at = datetime.now()
+                    self.updated_at = None
+                    self.is_guest = True
+                    
+            return GuestUser()
+        
+        user = AuthService.get_user_by_id(db, int(payload.sub))
         if user is None:
             raise credentials_exception
         
@@ -250,6 +291,8 @@ async def get_current_user(
             )
         
         return user
+    except HTTPException:
+        raise
     except Exception as e:
         raise credentials_exception
 
@@ -272,6 +315,24 @@ async def get_current_superuser(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="权限不足"
+        )
+    return current_user
+
+async def get_current_registered_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """获取当前注册用户（拒绝游客用户）"""
+    # 检查是否是游客用户
+    if hasattr(current_user, 'is_guest') and current_user.is_guest:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="知识库功能仅对注册用户开放，请先登录"
+        )
+    
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="用户账户未激活"
         )
     return current_user
 

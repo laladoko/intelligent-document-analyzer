@@ -1,14 +1,50 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+import asyncio
+import time
 from app.api.document import router as document_router
 from app.api.auth import router as auth_router
 from app.api.knowledge import router as knowledge_router
+from app.api.graphrag import router as graphrag_router
+from app.config.timeout_config import SERVER_TIMEOUT
+# 导入bcrypt配置以解决兼容性警告
+from app.config import bcrypt_config
 
 app = FastAPI(
     title="企业文档智能分析系统",
     description="基于 OpenAI GPT-4o 的企业文档智能分析 API",
     version="1.0.0"
 )
+
+# 添加超时中间件
+@app.middleware("http")
+async def timeout_middleware(request: Request, call_next):
+    """请求超时中间件"""
+    try:
+        # 为长时间运行的操作设置更长的超时时间
+        if any(path in str(request.url) for path in ["/upload", "/batch-upload", "/ask"]):
+            timeout = SERVER_TIMEOUT
+        else:
+            timeout = 60.0  # 普通请求60秒超时
+        
+        start_time = time.time()
+        response = await asyncio.wait_for(call_next(request), timeout=timeout)
+        process_time = time.time() - start_time
+        response.headers["X-Process-Time"] = str(process_time)
+        return response
+    except asyncio.TimeoutError:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=408,
+            content={"detail": f"请求超时，处理时间超过 {timeout} 秒"}
+        )
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"服务器内部错误: {str(e)}"}
+        )
 
 # 允许所有来源跨域，便于前端本地开发
 app.add_middleware(
@@ -23,6 +59,7 @@ app.add_middleware(
 app.include_router(document_router)
 app.include_router(auth_router)
 app.include_router(knowledge_router)
+app.include_router(graphrag_router)
 
 @app.get("/")
 def root():

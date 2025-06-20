@@ -122,6 +122,7 @@ class UserProfile(BaseSchema):
     role: Optional[UserRole] = None
     last_login: Optional[datetime] = None
     created_at: datetime
+    is_guest: Optional[bool] = Field(False, description="是否为游客用户")
 
 # 认证相关模式
 class LoginRequest(BaseSchema):
@@ -252,6 +253,7 @@ class TokenPayload(BaseSchema):
     sub: Union[int, str] = Field(..., description="用户ID")
     username: Optional[str] = Field(None, description="用户名")
     role: Optional[str] = Field(None, description="角色")
+    is_guest: Optional[bool] = Field(None, description="是否游客")
     exp: int = Field(..., description="过期时间戳")
     iat: int = Field(..., description="签发时间戳")
     jti: str = Field(..., description="JWT ID")

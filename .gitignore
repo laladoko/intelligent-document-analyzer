@@ -47,6 +47,7 @@ env/
 ENV/
 .venv/
 .virtualenv/
+backend/graphrag_venv/
 
 # uv package manager
 .uv/
@@ -66,6 +67,8 @@ uv.lock
 backend/.env
 backend/.env.local
 backend/.env.production
+backend/.env.backup_*
+backend/.env.secret_backup
 
 # API Keys and Secrets (额外保护)
 config.py
@@ -87,6 +90,12 @@ uploads/
 # AI分析结果 (backend目录下)
 backend/results/
 results/
+
+# GraphRAG工作空间
+backend/graphrag_workspace/cache/
+backend/graphrag_workspace/output/
+backend/graphrag_workspace/logs/
+backend/graphrag_workspace/reports/
 
 # 临时处理文件
 temp/

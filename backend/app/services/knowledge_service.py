@@ -7,6 +7,7 @@ import uuid
 import time
 import os
 from datetime import datetime, timedelta
+from app.config.timeout_config import OPENAI_TIMEOUT, MAX_TOKENS
 
 from app.models.knowledge_base import KnowledgeBase, KnowledgeQA, PresetQuestion
 from app.models.knowledge_schemas import (
@@ -266,7 +267,7 @@ class KnowledgeService:
             # 创建OpenAI客户端
             client = openai.OpenAI(
                 api_key=api_key,
-                timeout=120.0
+                timeout=OPENAI_TIMEOUT
             )
             
             response = client.chat.completions.create(
@@ -275,12 +276,74 @@ class KnowledgeService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=1500,
+                max_tokens=MAX_TOKENS,
                 temperature=0.3
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
             raise Exception(f"OpenAI API调用失败: {str(e)}")
+    
+    @staticmethod
+    def ask_question_stream(question: str, context: str, context_count: int = 1):
+        """使用OpenAI进行流式问答"""
+        if context_count > 1:
+            system_prompt = f"""你是一个企业知识库助手。基于提供的{context_count}个相关文档内容回答用户问题。
+
+规则：
+1. 综合分析多个文档的信息，给出全面准确的回答
+2. 如果多个文档有相关信息，请整合这些信息
+3. 如果文档间有冲突信息，请指出并分别说明
+4. 回答要条理清晰、重点突出
+5. 使用中文回答
+6. 在回答中可以适当注明信息来源（如"根据第一个文档"、"另一份资料显示"等）"""
+        else:
+            system_prompt = """你是一个企业知识库助手。基于提供的知识库内容回答用户问题。
+
+规则：
+1. 优先使用知识库中的信息回答
+2. 如果知识库中没有相关信息，诚实地说明
+3. 回答要简洁、准确、有帮助
+4. 使用中文回答
+5. 可以适当引用知识库中的具体内容"""
+
+        user_prompt = f"""知识库内容：
+{context}
+
+用户问题：{question}
+
+请基于上述知识库内容回答用户问题。"""
+
+        try:
+            # 获取API密钥
+            api_key = os.getenv('OPENAI_API_KEY')
+            if not api_key:
+                raise Exception("请设置 OPENAI_API_KEY 环境变量")
+            
+            # 创建OpenAI客户端
+            client = openai.OpenAI(
+                api_key=api_key,
+                timeout=OPENAI_TIMEOUT
+            )
+            
+            # 流式调用OpenAI API
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=MAX_TOKENS,
+                temperature=0.3,
+                stream=True  # 启用流式输出
+            )
+            
+            # 生成流式响应
+            for chunk in response:
+                if chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+                    
+        except Exception as e:
+            raise Exception(f"OpenAI API流式调用失败: {str(e)}")
     
     @staticmethod
     def get_preset_questions(db: Session, category: Optional[str] = None) -> List[PresetQuestion]:

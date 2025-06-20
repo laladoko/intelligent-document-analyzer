@@ -1,52 +1,23 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
+  reactStrictMode: false,
   
   async rewrites() {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:8081/api/:path*',
-      },
-    ];
-  },
-
-  async headers() {
-    return [
-      {
-        source: '/api/:path*',
-        headers: [
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*',
-          },
-          {
-            key: 'Access-Control-Allow-Methods',
-            value: 'GET, POST, PUT, DELETE, OPTIONS',
-          },
-          {
-            key: 'Access-Control-Allow-Headers',
-            value: 'Content-Type, Authorization',
-          },
-        ],
+        destination: 'http://localhost:8000/api/:path*',
       },
     ];
   },
   
-  // 优化实验性功能配置
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '50mb',
-    },
+  // 简化配置，移除可能导致问题的选项
+  typescript: {
+    ignoreBuildErrors: false,
   },
   
-  // 处理大文件上传
-  serverRuntimeConfig: {
-    maxFileSize: '50mb',
-  },
-  
-  publicRuntimeConfig: {
-    maxFileSize: '50mb',
+  eslint: {
+    ignoreDuringBuilds: false,
   },
 };
 

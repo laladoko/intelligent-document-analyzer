@@ -9,7 +9,8 @@ from app.models.user import User, UserRole, UserSession
 from app.models.auth_schemas import (
     LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
     TokenRefreshRequest, TokenRefreshResponse, LogoutRequest,
-    UserProfile, UserPasswordUpdate, PasswordResetRequest, PasswordResetConfirm
+    UserProfile, UserPasswordUpdate, PasswordResetRequest, PasswordResetConfirm,
+    UserRole as UserRoleSchema
 )
 from app.services.auth_service import (
     AuthService, get_current_user, get_current_active_user, security
@@ -94,7 +95,8 @@ async def login(
             avatar_url=user.avatar_url,
             role=user.role,
             last_login=user.last_login,
-            created_at=user.created_at
+            created_at=user.created_at,
+            is_guest=False
         )
         
         return LoginResponse(
@@ -280,7 +282,8 @@ async def get_current_user_profile(
         avatar_url=current_user.avatar_url,
         role=current_user.role,
         last_login=current_user.last_login,
-        created_at=current_user.created_at
+        created_at=current_user.created_at,
+        is_guest=False
     )
 
 @router.put("/password")
@@ -383,7 +386,7 @@ async def guest_login(request: Request):
             department="游客",
             position="访客",
             avatar_url=None,
-            role=UserRole(
+            role=UserRoleSchema(
                 id=0,
                 name="guest",
                 display_name="游客",
@@ -394,7 +397,8 @@ async def guest_login(request: Request):
                 updated_at=None
             ),
             last_login=None,
-            created_at=datetime.now()
+            created_at=datetime.now(),
+            is_guest=True
         )
         
         return LoginResponse(

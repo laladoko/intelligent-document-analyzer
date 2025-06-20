@@ -22,6 +22,9 @@ pydantic>=2.4.0
 pydantic-settings>=2.0.0
 
 # 认证相关
+# bcrypt 4.3.0: 最新版本，支持Python 3.13和free-threaded模式
+# passlib 1.7.4: 与bcrypt 4.x配合使用，警告已通过配置抑制
+bcrypt>=4.3.0
 passlib[bcrypt]>=1.7.4
 python-jose[cryptography]>=3.3.0
 PyJWT>=2.8.0
@@ -31,3 +34,10 @@ email-validator>=2.0.0
 python-multipart>=0.0.6
 
 aiofiles 
+# GraphRAG 相关依赖
+graphrag>=0.3.0
+networkx>=3.0
+matplotlib>=3.5.0
+plotly>=5.0.0
+spacy>=3.7.0
+nltk>=3.8

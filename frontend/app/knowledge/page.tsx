@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Send, BookOpen, MessageSquare, ThumbsUp, ThumbsDown, RefreshCw, Search, Tag, Clock, User } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Send, BookOpen, MessageSquare, ThumbsUp, ThumbsDown, RefreshCw, Search, Tag, Clock, User, Trash2, Download, FileDown } from 'lucide-react'
 
 interface KnowledgeItem {
   id: number
@@ -43,6 +44,7 @@ interface KnowledgeStats {
 }
 
 export default function KnowledgePage() {
+  const router = useRouter()
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([])
   const [presetQuestions, setPresetQuestions] = useState<PresetQuestion[]>([])
   const [qaHistory, setQaHistory] = useState<QARecord[]>([])
@@ -60,10 +62,13 @@ export default function KnowledgePage() {
   const [selectedDocuments, setSelectedDocuments] = useState<Set<number>>(new Set())
   const [showDocumentDetail, setShowDocumentDetail] = useState(false)
   const [detailDocument, setDetailDocument] = useState<KnowledgeItem | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [streamingAnswer, setStreamingAnswer] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // 获取当前用户信息
+  // 检查认证状态并处理游客跳转
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
@@ -71,13 +76,18 @@ export default function KnowledgePage() {
         const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
         const userData = localStorage.getItem('user') || sessionStorage.getItem('user')
         
-        if (!token || !userData) {
-          setIsAuthenticated(false)
+        // 检查是否是游客用户
+        const guestToken = sessionStorage.getItem('guestToken')
+        const isGuest = guestToken && !token
+        
+        if (!token || !userData || isGuest) {
+          // 游客用户或未登录用户自动跳转到登录页面
           setAuthLoading(false)
+          router.push('/login')
           return
         }
 
-        const response = await fetch('http://localhost:8081/api/auth/verify', {
+        const response = await fetch('http://localhost:8000/api/auth/verify', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -86,24 +96,36 @@ export default function KnowledgePage() {
         if (response.ok) {
           const verifyData = await response.json()
           if (verifyData.valid) {
-            setCurrentUser(JSON.parse(userData))
+            const user = JSON.parse(userData)
+            // 检查是否是游客用户
+            if (user.is_guest === true) {
+              router.push('/login')
+              return
+            }
+            setCurrentUser(user)
             setIsAuthenticated(true)
           } else {
-            setIsAuthenticated(false)
+            // Token无效，跳转到登录页面
+            router.push('/login')
+            return
           }
         } else {
-          setIsAuthenticated(false)
+          // 验证失败，跳转到登录页面
+          router.push('/login')
+          return
         }
       } catch (error) {
         console.error('获取用户信息失败:', error)
-        setIsAuthenticated(false)
+        // 出错时也跳转到登录页面
+        router.push('/login')
+        return
       } finally {
         setAuthLoading(false)
       }
     }
 
     fetchCurrentUser()
-  }, [])
+  }, [router])
 
   // 获取知识库统计
   useEffect(() => {
@@ -114,7 +136,7 @@ export default function KnowledgePage() {
         const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
         if (!token) return
 
-        const response = await fetch('http://localhost:8081/api/knowledge/stats', {
+        const response = await fetch('http://localhost:8000/api/knowledge/stats', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -141,7 +163,7 @@ export default function KnowledgePage() {
         const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
         if (!token) return
 
-        const response = await fetch('http://localhost:8081/api/knowledge/preset-questions', {
+        const response = await fetch('http://localhost:8000/api/knowledge/preset-questions', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -169,7 +191,7 @@ export default function KnowledgePage() {
         if (!token) return
 
         // 搜索最近的文档分析结果
-        const response = await fetch('http://localhost:8081/api/knowledge/search', {
+        const response = await fetch('http://localhost:8000/api/knowledge/search', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -206,7 +228,8 @@ export default function KnowledgePage() {
 
       // 构建请求体
       const requestBody: any = {
-        limit: 10
+        limit: 10,
+        include_inactive: false  // 只显示活跃的文档
       }
       
       // 只有当查询不为空时才添加查询字段
@@ -217,7 +240,7 @@ export default function KnowledgePage() {
         requestBody.source_type = 'document_analysis'
       }
 
-      const response = await fetch('http://localhost:8081/api/knowledge/search', {
+      const response = await fetch('http://localhost:8000/api/knowledge/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -235,27 +258,41 @@ export default function KnowledgePage() {
     }
   }
 
-  // 提问
+  // 流式提问
   const askQuestion = async (question: string) => {
-    if (!question.trim() || isLoading) return
+    if (!question.trim() || isLoading || isStreaming) return
 
     if (!isAuthenticated) {
       alert('请先登录后使用知识库功能')
-      setIsLoading(false)
       return
     }
 
     setIsLoading(true)
+    setIsStreaming(true)
+    setStreamingAnswer('')
+    
+    // 先将问题添加到历史
+    const questionRecord: QARecord = {
+      id: Date.now(),
+      question: question,
+      answer: '',
+      created_at: new Date().toISOString()
+    }
     
     try {
       const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
       if (!token) {
         alert('请先登录')
         setIsLoading(false)
+        setIsStreaming(false)
         return
       }
+      
+      setQaHistory(prev => [...prev, questionRecord])
+      setCurrentQuestion('')
 
-      const response = await fetch('http://localhost:8081/api/knowledge/ask', {
+      // 创建EventSource进行流式请求
+      const response = await fetch('http://localhost:8000/api/knowledge/ask-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -267,35 +304,78 @@ export default function KnowledgePage() {
         })
       })
 
-      if (response.ok) {
-        const result = await response.json()
-        
-        // 添加到对话历史
-        const newQA: QARecord = {
-          id: result.id,
-          question: result.question,
-          answer: result.answer,
-          knowledge_id: result.knowledge_id,
-          response_time: result.response_time,
-          created_at: new Date().toISOString()
-        }
-        
-        setQaHistory(prev => [...prev, newQA])
-        setCurrentQuestion('')
-        
-        // 滚动到底部
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-        }, 100)
-      } else {
-        const error = await response.json()
-        alert(`提问失败: ${error.detail}`)
+      if (!response.ok) {
+        throw new Error('请求失败')
       }
+
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error('无法获取响应流')
+      }
+
+      let fullAnswer = ''
+      
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          
+          if (done) {
+            break
+          }
+          
+          const chunk = new TextDecoder().decode(value)
+          const lines = chunk.split('\n')
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6)
+              
+              if (data.trim()) {
+                try {
+                  const parsed = JSON.parse(data)
+                  
+                  if (parsed.type === 'content') {
+                    fullAnswer += parsed.data
+                    setStreamingAnswer(fullAnswer)
+                  } else if (parsed.type === 'done') {
+                    // 流式输出完成，更新最后的记录
+                    setQaHistory(prev => 
+                      prev.map(qa => 
+                        qa.id === questionRecord.id 
+                          ? { ...qa, answer: fullAnswer, response_time: Date.now() - qa.id }
+                          : qa
+                      )
+                    )
+                    setStreamingAnswer('')
+                  } else if (parsed.type === 'error') {
+                    throw new Error(parsed.data)
+                  }
+                } catch (parseError) {
+                  console.error('解析响应失败:', parseError)
+                }
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+      
+      // 滚动到底部
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
+      
     } catch (error) {
       console.error('提问失败:', error)
       alert('提问失败，请重试')
+      
+      // 移除失败的问题记录
+      setQaHistory(prev => prev.filter(qa => qa.id !== questionRecord.id))
+      setStreamingAnswer('')
     } finally {
       setIsLoading(false)
+      setIsStreaming(false)
     }
   }
 
@@ -305,7 +385,7 @@ export default function KnowledgePage() {
       const token = localStorage.getItem('token') || sessionStorage.getItem('guestToken')
       if (token) {
         // 记录点击
-        await fetch(`http://localhost:8081/api/knowledge/preset-questions/${question.id}/click`, {
+        await fetch(`http://localhost:8000/api/knowledge/preset-questions/${question.id}/click`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -343,6 +423,108 @@ export default function KnowledgePage() {
     setDetailDocument(null)
   }
 
+  // 删除文档
+  const handleDeleteDocument = async (documentId: number) => {
+    if (!confirm('确定要删除这个文档吗？此操作不可恢复。')) {
+      return
+    }
+
+    try {
+      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
+      if (!token) {
+        alert('请先登录')
+        return
+      }
+
+      const response = await fetch(`http://localhost:8000/api/knowledge/items/${documentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (response.ok) {
+        // 从列表中移除文档
+        setKnowledgeItems(prev => prev.filter(item => item.id !== documentId))
+        // 从选择中移除
+        setSelectedDocuments(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(documentId)
+          return newSet
+        })
+        alert('文档删除成功')
+      } else {
+        const error = await response.json()
+        alert(`删除失败: ${error.detail}`)
+      }
+    } catch (error) {
+      console.error('删除文档失败:', error)
+      alert('删除失败，请重试')
+    }
+  }
+
+  // 导出选中文档
+  const handleExportDocuments = async () => {
+    if (selectedDocuments.size === 0) {
+      alert('请先选择要导出的文档')
+      return
+    }
+
+    setIsExporting(true)
+    
+    try {
+      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token')
+      if (!token) {
+        alert('请先登录')
+        setIsExporting(false)
+        return
+      }
+
+      const response = await fetch('http://localhost:8000/api/knowledge/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(Array.from(selectedDocuments))
+      })
+
+      if (response.ok) {
+        // 获取文件名
+        const contentDisposition = response.headers.get('Content-Disposition')
+        let filename = '文档分析合集.zip'
+        if (contentDisposition) {
+          const matches = contentDisposition.match(/filename=([^;]+)/)
+          if (matches) {
+            filename = matches[1]
+          }
+        }
+
+        // 下载文件
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.style.display = 'none'
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        
+        alert('文档导出成功')
+      } else {
+        const error = await response.json()
+        alert(`导出失败: ${error.detail}`)
+      }
+    } catch (error) {
+      console.error('导出文档失败:', error)
+      alert('导出失败，请重试')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   // 搜索输入处理
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
@@ -352,52 +534,21 @@ export default function KnowledgePage() {
     return () => clearTimeout(debounceTimer)
   }, [searchQuery, isAuthenticated])
 
-  // 如果正在检查认证状态，显示加载界面
+  // 如果正在加载认证状态，显示加载页面
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">企业知识库问答</h1>
-          <p className="text-gray-600">正在验证登录状态...</p>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">正在验证用户身份...</p>
         </div>
       </div>
     )
   }
 
-  // 如果用户未登录，显示登录提示
+  // 如果未认证，不渲染任何内容（因为会被重定向）
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
-          <BookOpen className="h-16 w-16 text-blue-600 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">企业知识库问答</h1>
-          <p className="text-gray-600 mb-6">
-            知识库功能仅对注册用户开放，请先登录后使用。
-          </p>
-          <div className="space-y-3">
-            <button
-              onClick={() => window.location.href = '/login?redirect=/knowledge'}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              用户登录
-            </button>
-            <button
-              onClick={() => window.location.href = '/register'}
-              className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors"
-            >
-              注册账户
-            </button>
-            <button
-              onClick={() => window.location.href = '/'}
-              className="w-full text-blue-600 py-2 px-4 rounded-lg hover:bg-blue-50 transition-colors"
-            >
-              返回首页
-            </button>
-          </div>
-        </div>
-      </div>
-    )
+    return null
   }
 
   return (
@@ -488,18 +639,32 @@ export default function KnowledgePage() {
                         
                         {/* 文档内容 */}
                         <div className="flex-1 min-w-0">
-                          <div 
-                            className="cursor-pointer"
-                            onClick={() => handleViewDocumentDetail(item)}
-                          >
-                            <h4 className="font-medium text-gray-900 text-sm mb-1 hover:text-blue-600 transition-colors">
-                              {item.title}
-                            </h4>
-                            {item.summary && (
-                              <p className="text-xs text-gray-600 mb-2 line-clamp-2">
-                                {item.summary}
-                              </p>
-                            )}
+                          <div className="flex items-start justify-between">
+                            <div 
+                              className="cursor-pointer flex-1"
+                              onClick={() => handleViewDocumentDetail(item)}
+                            >
+                              <h4 className="font-medium text-gray-900 text-sm mb-1 hover:text-blue-600 transition-colors">
+                                {item.title}
+                              </h4>
+                              {item.summary && (
+                                <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                                  {item.summary}
+                                </p>
+                              )}
+                            </div>
+                            
+                            {/* 删除按钮 */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeleteDocument(item.id)
+                              }}
+                              className="ml-2 p-1 text-gray-400 hover:text-red-600 transition-colors"
+                              title="删除文档"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
                           </div>
                           
                           <div className="flex items-center justify-between text-xs text-gray-500">
@@ -571,12 +736,32 @@ export default function KnowledgePage() {
                     <MessageSquare className="h-5 w-5 mr-2 text-blue-600" />
                     智能问答
                   </h2>
-                  <button
-                    onClick={() => setQaHistory([])}
-                    className="text-gray-500 hover:text-gray-700 transition-colors"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    {/* 导出按钮 */}
+                    {selectedDocuments.size > 0 && (
+                      <button
+                        onClick={handleExportDocuments}
+                        disabled={isExporting}
+                        className="flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="导出选中文档"
+                      >
+                        {isExporting ? (
+                          <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <Download className="h-3 w-3 mr-1" />
+                        )}
+                        导出({selectedDocuments.size})
+                      </button>
+                    )}
+                    
+                    <button
+                      onClick={() => setQaHistory([])}
+                      className="text-gray-500 hover:text-gray-700 transition-colors"
+                      title="清空对话"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
                 
                 {/* 选中的文档显示 */}
@@ -662,7 +847,12 @@ export default function KnowledgePage() {
                         <div className="flex justify-start">
                           <div className="max-w-3xl bg-gray-100 rounded-lg px-4 py-3">
                             <div className="prose prose-sm max-w-none">
-                              <p className="text-gray-800 whitespace-pre-wrap">{qa.answer}</p>
+                              <p className="text-gray-800 whitespace-pre-wrap">
+                                {qa.answer || (qa.id === qaHistory[qaHistory.length - 1]?.id && isStreaming ? streamingAnswer : '')}
+                                {qa.id === qaHistory[qaHistory.length - 1]?.id && isStreaming && (
+                                  <span className="inline-block w-2 h-4 bg-blue-600 animate-pulse ml-1"></span>
+                                )}
+                              </p>
                             </div>
                             <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-200">
                               <div className="flex items-center space-x-2 text-xs text-gray-500">
@@ -670,6 +860,9 @@ export default function KnowledgePage() {
                                   <span>响应时间: {qa.response_time}ms</span>
                                 )}
                                 <span>{new Date(qa.created_at).toLocaleTimeString()}</span>
+                                {qa.id === qaHistory[qaHistory.length - 1]?.id && isStreaming && (
+                                  <span className="text-blue-600">正在思考中...</span>
+                                )}
                               </div>
                               <div className="flex items-center space-x-2">
                                 <button className="text-gray-400 hover:text-green-600 transition-colors">
@@ -709,10 +902,10 @@ export default function KnowledgePage() {
                   </div>
                   <button
                     onClick={() => askQuestion(currentQuestion)}
-                    disabled={!currentQuestion.trim() || isLoading}
+                    disabled={!currentQuestion.trim() || isLoading || isStreaming}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
                   >
-                    {isLoading ? (
+                    {isLoading || isStreaming ? (
                       <RefreshCw className="h-4 w-4 animate-spin" />
                     ) : (
                       <Send className="h-4 w-4" />
@@ -834,6 +1027,18 @@ export default function KnowledgePage() {
                 >
                   {selectedDocuments.has(detailDocument.id) ? '取消选择' : '选择为上下文'}
                 </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteDocument(detailDocument.id)
+                    handleCloseDocumentDetail()
+                  }}
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-red-300 bg-red-600 text-white px-4 py-2 text-base font-medium shadow-sm hover:bg-red-700 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  删除文档
+                </button>
+                
                 <button
                   type="button"
                   onClick={handleCloseDocumentDetail}
