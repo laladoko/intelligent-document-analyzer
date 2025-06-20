@@ -562,6 +562,15 @@ export default function KnowledgePage() {
               <h1 className="text-xl font-semibold text-gray-900">企业知识库问答</h1>
             </div>
             <div className="flex items-center space-x-4">
+              <a
+                href="/graphrag"
+                className="inline-flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors duration-200"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V7.618a1 1 0 01.553-.894L9 4l6 3 6-3 .553.894A1 1 0 0122 7.618v8.764a1 1 0 01-.553.894L15 20l-6-3z" />
+                </svg>
+                <span>GraphRAG</span>
+              </a>
               {currentUser && (
                 <div className="flex items-center space-x-2 text-sm text-gray-600">
                   <User className="h-4 w-4" />

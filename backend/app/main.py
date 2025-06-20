@@ -85,7 +85,12 @@ def root():
             "knowledge_search": "/api/knowledge/search",
             "knowledge_ask": "/api/knowledge/ask",
             "knowledge_preset": "/api/knowledge/preset-questions",
-            "knowledge_stats": "/api/knowledge/stats"
+            "knowledge_stats": "/api/knowledge/stats",
+            "graphrag_status": "/api/graphrag/status",
+            "graphrag_build": "/api/graphrag/build-index",
+            "graphrag_search": "/api/graphrag/search",
+            "graphrag_health": "/api/graphrag/health",
+            "graphrag_info": "/api/graphrag/info"
         },
         "features": [
             "用户认证和权限管理",
@@ -97,7 +102,13 @@ def root():
             "智能知识库存储",
             "知识库问答系统",
             "预设问题快速查询",
-            "知识搜索和统计"
+            "知识搜索和统计",
+            "GraphRAG 知识图谱构建",
+            "基于图的检索增强生成",
+            "全局和本地搜索",
+            "混合搜索策略",
+            "实体关系分析",
+            "社区发现和层次结构"
         ],
         "status": "running"
     }
