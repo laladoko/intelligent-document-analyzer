@@ -55,9 +55,15 @@ class GraphRAGService:
         self.input_path.mkdir(exist_ok=True)
         self.output_path.mkdir(exist_ok=True)
         
-        # OpenAI配置
+        # OpenAI和GraphRAG配置
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.model = os.getenv("GRAPHRAG_MODEL", "gpt-4o")
+        self.embedding_model = os.getenv("GRAPHRAG_EMBEDDING_MODEL", "text-embedding-3-small")
+        self.concurrent_requests = int(os.getenv("GRAPHRAG_CONCURRENT_REQUESTS", "25"))
+        self.tpm = int(os.getenv("GRAPHRAG_TPM", "50000"))
+        self.rpm = int(os.getenv("GRAPHRAG_RPM", "500"))
+        self.request_timeout = float(os.getenv("GRAPHRAG_REQUEST_TIMEOUT", "180.0"))
+        self.max_retries = int(os.getenv("GRAPHRAG_MAX_RETRIES", "10"))
         
         # GraphRAG查询实例
         self._global_search = None
@@ -129,19 +135,19 @@ class GraphRAGService:
                 "temperature": 0.0,
                 "top_p": 1.0,
                 "n": 1,
-                "request_timeout": 180.0,
+                "request_timeout": self.request_timeout,
                 "api_base": None,
                 "api_version": None,
                 "organization": None,
                 "proxy": None,
                 "cognitive_services_endpoint": None,
                 "deployment_name": None,
-                "tokens_per_minute": 50000,
-                "requests_per_minute": 500,
-                "max_retries": 10,
+                "tokens_per_minute": self.tpm,
+                "requests_per_minute": self.rpm,
+                "max_retries": self.max_retries,
                 "max_retry_wait": 10.0,
                 "sleep_on_rate_limit_recommendation": True,
-                "concurrent_requests": 25
+                "concurrent_requests": self.concurrent_requests
             },
             "parallelization": {
                 "stagger": 0.3,
@@ -152,19 +158,19 @@ class GraphRAGService:
                 "llm": {
                     "api_key": self.api_key,
                     "type": "openai_embedding",
-                    "model": "text-embedding-3-small",
+                    "model": self.embedding_model,
                     "api_base": None,
                     "api_version": None,
                     "organization": None,
                     "proxy": None,
                     "cognitive_services_endpoint": None,
                     "deployment_name": None,
-                    "tokens_per_minute": 150000,
-                    "requests_per_minute": 1000,
-                    "max_retries": 10,
+                    "tokens_per_minute": self.tpm * 3,  # 嵌入模型通常有更高的限制
+                    "requests_per_minute": self.rpm * 2,
+                    "max_retries": self.max_retries,
                     "max_retry_wait": 10.0,
                     "sleep_on_rate_limit_recommendation": True,
-                    "concurrent_requests": 25
+                    "concurrent_requests": self.concurrent_requests
                 }
             },
             "chunks": {
