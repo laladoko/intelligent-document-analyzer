@@ -53,42 +53,6 @@ def extract_text_from_file(file_path: str, filename: str) -> str:
 
 def analyze_with_openai(text: str) -> str:
     """使用OpenAI GPT-4o分析文档内容"""
-    # 临时返回模拟结果，避免API阻塞
-    logger.info("使用模拟分析结果 (OpenAI API暂时禁用以确保系统稳定)")
-    return f"""
-公司名称：文档智能分析系统演示
-
-成立时间：2024年
-
-主要项目：
-- 企业文档智能分析平台
-  * 核心内容：基于AI技术的企业文档自动化分析系统
-  * 技术特色：支持多种文档格式（PDF、DOCX、TXT等）的智能解析
-  * 分析能力：能够自动提取企业关键信息并生成结构化报告
-  * 应用成果：为企业提供高效的知识管理和文档分析解决方案
-
-核心产品与服务：
-- 主要服务对象：企业客户、知识工作者、文档管理人员
-- 具体服务内容：
-  * 文档上传和自动化分析
-  * 企业知识库构建和管理
-  * 智能问答和知识检索
-  * 多格式文档内容提取
-- 技术优势：
-  * 基于大语言模型的智能分析
-  * 支持批量文档处理
-  * 结构化信息提取
-  * 用户友好的Web界面
-- 应用场景：企业知识管理、文档数字化、智能办公
-
-注：当前为演示模式，显示模拟分析结果。完整的AI分析功能需要配置有效的OpenAI API密钥。
-
-原始文档内容片段：
-{text[:300] if len(text) > 300 else text}
-"""
-
-def analyze_with_openai_original(text: str) -> str:
-    """使用OpenAI GPT-4o分析文档内容（原始版本）"""
     max_retries = 3
     retry_delay = 2
     
@@ -187,42 +151,10 @@ def analyze_with_openai_original(text: str) -> str:
     
     raise Exception("OpenAI API调用失败，已重试3次")
 
+
+
 def analyze_with_openai_xml(text: str) -> str:
     """使用OpenAI GPT-4o分析文档内容并输出XML格式"""
-    # 临时返回模拟XML结果，避免API阻塞
-    logger.info("使用模拟XML分析结果 (OpenAI API暂时禁用以确保系统稳定)")
-    return f"""
-企业信息XML结构：
-
-<enterprise_info>
-    <basic_info>
-        <company_name>文档智能分析系统演示</company_name>
-        <establishment_time>2024年</establishment_time>
-    </basic_info>
-    
-    <main_projects>
-        <project>
-            <name>企业文档智能分析平台</name>
-            <description>基于AI技术的企业文档自动化分析系统，能够智能解析多种文档格式并提取关键信息</description>
-            <technologies>大语言模型、文档解析技术、Web开发、数据库管理</technologies>
-            <results>为企业提供高效的知识管理和文档分析解决方案</results>
-        </project>
-    </main_projects>
-    
-    <core_services>
-        <target_customers>企业客户、知识工作者、文档管理人员</target_customers>
-        <service_content>文档上传和自动化分析、企业知识库构建、智能问答和知识检索</service_content>
-        <features>支持多格式文档、批量处理、结构化信息提取、用户友好界面</features>
-        <methodology>基于大语言模型的智能分析技术</methodology>
-        <specifications>Web端访问、实时处理、企业级安全</specifications>
-    </core_services>
-</enterprise_info>
-
-注：当前为XML演示模式。原始文档内容：{text[:200] if len(text) > 200 else text}
-"""
-
-def analyze_with_openai_xml_original(text: str) -> str:
-    """使用OpenAI GPT-4o分析文档内容并输出XML格式（原始版本）"""
     max_retries = 3
     retry_delay = 2
     
@@ -325,6 +257,8 @@ def analyze_with_openai_xml_original(text: str) -> str:
             raise Exception(f"OpenAI API调用错误: {str(e)}")
     
     raise Exception("OpenAI API调用失败，已重试3次")
+
+
 
 def generate_xml_summary(filename: str, original_text: str, ai_summary: str) -> str:
     """生成XML格式的分析摘要"""
