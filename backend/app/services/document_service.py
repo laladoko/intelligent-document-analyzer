@@ -1,6 +1,6 @@
 import os
 import tempfile
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import PyPDF2
 import docx
 from lxml import etree
@@ -9,6 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import time
 import logging
+import asyncio
 
 # 加载环境变量
 load_dotenv()
@@ -18,6 +19,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx', 'doc'}
+
+# 导入防阻塞配置
+from app.config.anti_blocking_config import (
+    openai_circuit_breaker, config, with_timeout_and_fallback
+)
 
 def allowed_file(filename: str) -> bool:
     """检查文件扩展名是否被允许"""
@@ -51,214 +57,239 @@ def extract_text_from_file(file_path: str, filename: str) -> str:
         logger.error(f"文件读取错误: {str(e)}")
         raise Exception(f"文件读取错误: {str(e)}")
 
-def analyze_with_openai(text: str) -> str:
-    """使用OpenAI GPT-4o分析文档内容"""
-    max_retries = 3
-    retry_delay = 2
+# 异步OpenAI客户端
+async def get_openai_client() -> Optional[openai.AsyncOpenAI]:
+    """获取异步OpenAI客户端"""
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        return None
     
-    for attempt in range(max_retries):
-        try:
-            # 获取API密钥
-            api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key:
-                raise Exception("请设置 OPENAI_API_KEY 环境变量")
-            
-            # 创建OpenAI客户端，增加超时时间
-            client = openai.OpenAI(
-                api_key=api_key,
-                timeout=150.0  # 增加超时时间到150秒
-            )
-            
-            # 限制文本长度，避免超时
-            max_text_length = 6000  # 减少文本长度限制
-            if len(text) > max_text_length:
-                text = text[:max_text_length] + "\n\n[文档内容因长度限制已截断...]"
-            
-            logger.info(f"开始OpenAI分析，尝试第 {attempt + 1} 次")
-            
-            response = client.chat.completions.create(
-                model="gpt-4o",  # 使用gpt-4o模型
+    return openai.AsyncOpenAI(
+        api_key=api_key,
+        timeout=config.OPENAI_TIMEOUT,
+        max_retries=config.MAX_RETRIES
+    )
+
+async def analyze_with_openai(text: str) -> str:
+    """使用OpenAI GPT-4o分析文档内容，简化版本便于测试"""
+    
+    # 降级响应 - 当AI不可用时的默认分析
+    async def get_fallback_analysis(text: str) -> str:
+        word_count = len(text)
+        return f"""
+公司名称：未知（文档分析中未明确提及）
+
+主要业务：基于文档内容，这是一份企业相关文档，包含业务信息、培训内容或管理制度等内容。
+
+关键特色：
+- 文档字数约 {word_count} 字符
+- 包含结构化的企业信息
+- 涉及业务流程或培训内容
+
+服务对象：企业内部员工或相关业务人员
+
+📝 注意：此分析为系统默认生成（AI服务暂时不可用）。如需完整AI分析，请稍后重试。
+"""
+
+    # 快速检查 - 如果文本过短，直接返回降级响应
+    if len(text.strip()) < 20:
+        return await get_fallback_analysis(text)
+    
+    # 简化版本：直接调用OpenAI API
+    try:
+        client = await get_openai_client()
+        if not client:
+            logger.warning("OpenAI客户端未配置，使用降级分析")
+            return await get_fallback_analysis(text)
+        
+        # 文本长度控制
+        max_text_length = 2000
+        if len(text) > max_text_length:
+            text_to_analyze = text[:max_text_length] + "\n\n[文档内容因长度限制已截断...]"
+        else:
+            text_to_analyze = text
+        
+        logger.info("开始OpenAI智能分析（简化版本）")
+        
+        # 直接调用，设置合理超时
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system", 
-                        "content": """你是一个专业的企业文档分析专家。请仔细分析企业文档，提取关键信息并按照指定格式输出。
+                        "content": """你是专业的企业文档分析专家。请分析文档并按格式输出：
 
-分析要求：
-1. 仔细阅读所有提供的文档内容
-2. 提取企业的关键信息，包括公司背景、项目成果、产品服务等
-3. 如果某些信息在文档中未明确提及，请标注为"未知"并说明原因
-4. 输出内容要详细、准确、结构化
+公司名称：[公司名称或"未知"]
+主要业务：[核心业务描述]
+关键特色：[主要特色列表]
+服务对象：[目标客户]
 
-输出格式要求：
-请严格按照以下格式输出，并确保内容详细完整：
-
-公司名称：[如果文档中明确提及公司名称则提取，否则标注"未知（文档中未提及具体公司名称）"]
-
-成立时间：[如果文档中明确提及成立时间则提取，否则标注"未知（文档中未提及成立时间）"]
-
-主要项目：
-[详细列出企业已完成或正在进行的项目，每个项目用独立段落描述，包括：]
-- 项目的核心内容和目标
-- 项目的特色和亮点  
-- 项目涉及的技术、方法或工具
-- 项目的成果或影响
-
-核心产品与服务：
-[详细描述企业的核心产品和服务，包括：]
-- 主要服务对象或目标客户
-- 具体的产品或服务内容
-- 产品/服务的特色和优势
-- 相关的技术手段或方法论
-- 服务的时长、规模等具体信息
-
-注意事项：
-- 描述要客观、准确，避免过度夸大
-- 重点突出企业的核心能力和差异化优势
-- 内容要适合作为客服机器人的知识库，便于快速响应客户询问"""
+要求简洁、准确、专业。"""
                     },
                     {
                         "role": "user", 
-                        "content": f"请分析以下企业文档内容，按照指定格式提取并整理企业关键信息：\n\n{text}"
+                        "content": f"请分析以下企业文档：\n\n{text_to_analyze}"
                     }
                 ],
-                max_tokens=2500,  # 减少max_tokens
-                temperature=0.2
-            )
-            
-            logger.info("OpenAI分析完成")
-            return response.choices[0].message.content
+                max_tokens=800,
+                temperature=0.1
+            ),
+            timeout=25.0  # 25秒超时
+        )
         
-        except openai.RateLimitError as e:
-            logger.warning(f"OpenAI API限流，等待重试... (尝试 {attempt + 1}/{max_retries})")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay * (attempt + 1))
-                continue
-            raise Exception(f"OpenAI API限流，请稍后重试: {str(e)}")
+        logger.info("OpenAI智能分析完成")
+        return response.choices[0].message.content
         
-        except openai.APITimeoutError as e:
-            logger.warning(f"OpenAI API超时，等待重试... (尝试 {attempt + 1}/{max_retries})")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                continue
-            raise Exception(f"OpenAI API调用超时，请稍后重试: {str(e)}")
+    except asyncio.TimeoutError:
+        logger.warning("OpenAI API调用超时")
+        return await get_fallback_analysis(text) + "\n\n⚠️ API调用超时，请稍后重试"
         
-        except Exception as e:
-            logger.error(f"OpenAI API调用错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                continue
-            raise Exception(f"OpenAI API调用错误: {str(e)}")
+    except openai.RateLimitError as e:
+        logger.warning(f"OpenAI API限流: {e}")
+        return await get_fallback_analysis(text) + "\n\n⚠️ API调用限流，请稍后重试"
+        
+    except Exception as e:
+        logger.error(f"OpenAI API调用失败: {type(e).__name__}: {e}")
+        return await get_fallback_analysis(text) + f"\n\n⚠️ 分析失败: {type(e).__name__}"
+
+async def analyze_with_openai_xml(text: str) -> str:
+    """使用OpenAI分析文档并输出XML格式，带防阻塞保护"""
     
-    raise Exception("OpenAI API调用失败，已重试3次")
-
-
-
-def analyze_with_openai_xml(text: str) -> str:
-    """使用OpenAI GPT-4o分析文档内容并输出XML格式"""
-    max_retries = 3
-    retry_delay = 2
-    
-    for attempt in range(max_retries):
-        try:
-            # 获取API密钥
-            api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key:
-                raise Exception("请设置 OPENAI_API_KEY 环境变量")
-            
-            # 创建OpenAI客户端，增加超时时间
-            client = openai.OpenAI(
-                api_key=api_key,
-                timeout=150.0  # 增加超时时间到150秒
-            )
-            
-            # 限制文本长度，避免超时
-            max_text_length = 6000  # 减少文本长度限制
-            if len(text) > max_text_length:
-                text = text[:max_text_length] + "\n\n[文档内容因长度限制已截断...]"
-            
-            logger.info(f"开始OpenAI XML分析，尝试第 {attempt + 1} 次")
-            
-            response = client.chat.completions.create(
-                model="gpt-4o",  # 使用gpt-4o模型
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": """你是一个专业的企业文档分析专家。请分析企业文档并输出结构化的企业信息，以便在文本中展示XML格式内容。
-
-输出要求：
-1. 仔细分析文档内容，提取企业关键信息
-2. 按照以下格式输出，生成结构化的XML文本内容
-3. 如果信息未知，请在相应标签中标注原因
-4. 输出纯文本格式的XML，方便复制和查看
-
-格式示例：
-```
-企业信息XML结构：
-
+    # 降级XML响应
+    async def get_fallback_xml_analysis(text: str) -> str:
+        word_count = len(text)
+        return f"""
 <enterprise_info>
     <basic_info>
-        <company_name>公司名称或"未知（文档中未提及具体公司名称）"</company_name>
-        <establishment_time>成立时间或"未知（文档中未提及成立时间）"</establishment_time>
+        <company_name>未知（文档中未明确提及）</company_name>
+        <main_business>企业文档，包含业务或培训相关内容</main_business>
     </basic_info>
-    
-    <main_projects>
-        <project>
-            <name>项目名称</name>
-            <description>详细描述项目内容、目标、特色等</description>
-            <technologies>涉及的技术、方法或工具</technologies>
-            <results>项目成果或影响</results>
-        </project>
-        <!-- 如有多个项目，重复project标签 -->
-    </main_projects>
-    
-    <core_services>
-        <target_customers>主要服务对象或目标客户</target_customers>
-        <service_content>具体的产品或服务内容</service_content>
-        <features>产品/服务的特色和优势</features>
-        <methodology>相关的技术手段或方法论</methodology>
-        <specifications>服务的时长、规模等具体信息</specifications>
-    </core_services>
+    <key_features>
+        <feature>文档字数约 {word_count} 字符</feature>
+        <feature>包含结构化企业信息</feature>
+        <feature>涉及业务流程或培训内容</feature>
+    </key_features>
+    <target_customers>企业内部员工或业务相关人员</target_customers>
+    <analysis_note>系统默认分析（AI服务暂时不可用）</analysis_note>
 </enterprise_info>
-```
+"""
 
-请按照上述格式输出XML文本内容，使其易于在文本编辑器中查看和编辑。"""
-                    },
-                    {
-                        "role": "user", 
-                        "content": f"请分析以下企业文档内容，输出结构化的XML文本格式企业信息：\n\n{text}"
-                    }
-                ],
-                max_tokens=2500,  # 减少max_tokens
-                temperature=0.2
-            )
-            
-            logger.info("OpenAI XML分析完成")
-            return response.choices[0].message.content
-        
-        except openai.RateLimitError as e:
-            logger.warning(f"OpenAI API限流，等待重试... (尝试 {attempt + 1}/{max_retries})")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay * (attempt + 1))
-                continue
-            raise Exception(f"OpenAI API限流，请稍后重试: {str(e)}")
-        
-        except openai.APITimeoutError as e:
-            logger.warning(f"OpenAI API超时，等待重试... (尝试 {attempt + 1}/{max_retries})")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                continue
-            raise Exception(f"OpenAI API调用超时，请稍后重试: {str(e)}")
-        
-        except Exception as e:
-            logger.error(f"OpenAI API调用错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                continue
-            raise Exception(f"OpenAI API调用错误: {str(e)}")
+    # 快速检查
+    if len(text.strip()) < 50:
+        return await get_fallback_xml_analysis(text)
     
-    raise Exception("OpenAI API调用失败，已重试3次")
+    # 异步XML分析函数
+    async def _openai_xml_analysis():
+        client = await get_openai_client()
+        if not client:
+            logger.warning("OpenAI客户端未配置，使用降级XML分析")
+            return await get_fallback_xml_analysis(text)
+        
+        # 文本长度控制
+        max_text_length = 4000
+        if len(text) > max_text_length:
+            text_to_analyze = text[:max_text_length] + "\n\n[文档内容因长度限制已截断...]"
+        else:
+            text_to_analyze = text
+        
+        logger.info("开始OpenAI XML智能分析")
+        
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": """你是专业的企业文档分析专家。请分析文档并输出详细的XML格式企业信息。
 
+输出XML格式要求：
+<enterprise_info>
+    <basic_info>
+        <company_name>公司名称或"未知"</company_name>
+        <main_business>详细的主要业务描述</main_business>
+        <establishment_info>成立信息（如有）</establishment_info>
+    </basic_info>
+    <key_features>
+        <feature>主要特色1</feature>
+        <feature>主要特色2</feature>
+        <feature>主要特色3</feature>
+    </key_features>
+    <target_customers>目标客户群体描述</target_customers>
+    <services>
+        <service>具体服务内容1</service>
+        <service>具体服务内容2</service>
+    </services>
+    <additional_info>其他重要信息</additional_info>
+</enterprise_info>
 
+请确保XML格式正确，内容详细专业。"""
+                },
+                {
+                    "role": "user", 
+                    "content": f"请分析以下企业文档并输出详细的XML格式信息：\n\n{text_to_analyze}"
+                }
+            ],
+            max_tokens=1500,
+            temperature=0.2
+        )
+        
+        logger.info("OpenAI XML智能分析完成")
+        return response.choices[0].message.content
+    
+    # 使用熔断器保护的XML分析
+    try:
+        return await openai_circuit_breaker.call(
+            with_timeout_and_fallback,
+            _openai_xml_analysis,
+            config.OPENAI_TIMEOUT,
+            get_fallback_xml_analysis,
+            text
+        )
+    except Exception as e:
+        logger.warning(f"OpenAI XML分析完全失败: {str(e)}")
+        return await get_fallback_xml_analysis(text)
+
+# 保持向后兼容的同步接口
+def analyze_with_openai_sync(text: str) -> str:
+    """同步版本的OpenAI分析（向后兼容）"""
+    try:
+        return asyncio.run(analyze_with_openai(text))
+    except Exception as e:
+        logger.error(f"同步OpenAI分析失败: {e}")
+        word_count = len(text)
+        return f"""
+公司名称：未知（分析失败）
+
+主要业务：文档分析暂时不可用
+
+关键特色：
+- 文档字数约 {word_count} 字符
+- 系统繁忙，请稍后重试
+
+服务对象：企业用户
+
+📝 注意：系统繁忙，请稍后重试分析功能。
+"""
+
+def analyze_with_openai_xml_sync(text: str) -> str:
+    """同步版本的OpenAI XML分析（向后兼容）"""
+    try:
+        return asyncio.run(analyze_with_openai_xml(text))
+    except Exception as e:
+        logger.error(f"同步OpenAI XML分析失败: {e}")
+        return """
+<enterprise_info>
+    <basic_info>
+        <company_name>未知（分析失败）</company_name>
+        <main_business>文档分析暂时不可用</main_business>
+    </basic_info>
+    <key_features>
+        <feature>系统繁忙，请稍后重试</feature>
+    </key_features>
+    <target_customers>企业用户</target_customers>
+    <analysis_note>系统繁忙，请稍后重试分析功能</analysis_note>
+</enterprise_info>
+"""
 
 def generate_xml_summary(filename: str, original_text: str, ai_summary: str) -> str:
     """生成XML格式的分析摘要"""

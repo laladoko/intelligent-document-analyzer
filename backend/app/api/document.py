@@ -9,7 +9,7 @@ from datetime import datetime
 from app.services.document_service import (
     allowed_file, 
     extract_text_from_file, 
-    analyze_with_openai, 
+    analyze_with_openai,
     analyze_with_openai_xml,
     generate_xml_summary,
     combine_texts_for_analysis,
@@ -55,8 +55,8 @@ async def upload_document(
         # 提取文本内容
         text_content = extract_text_from_file(file_path, file.filename)
         
-        # 使用OpenAI分析
-        ai_analysis = analyze_with_openai(text_content)
+        # 使用OpenAI分析（异步）
+        ai_analysis = await analyze_with_openai(text_content)
         
         # 生成XML摘要
         xml_summary = generate_xml_summary(file.filename, text_content, ai_analysis)
@@ -130,8 +130,8 @@ async def upload_document_xml(
         # 提取文本内容
         text_content = extract_text_from_file(file_path, file.filename)
         
-        # 使用OpenAI分析（XML格式）
-        ai_analysis_xml = analyze_with_openai_xml(text_content)
+        # 使用OpenAI分析（XML格式，异步）
+        ai_analysis_xml = await analyze_with_openai_xml(text_content)
         
         # 生成完整的XML摘要
         xml_summary = generate_xml_summary(file.filename, text_content, ai_analysis_xml)
@@ -217,8 +217,8 @@ async def batch_upload_documents(
         # 合并所有文本进行分析
         combined_text = combine_texts_for_analysis(all_texts)
         
-        # 使用OpenAI分析
-        ai_analysis = analyze_with_openai(combined_text)
+        # 使用OpenAI分析（异步）
+        ai_analysis = await analyze_with_openai(combined_text)
         
         # 生成批量分析的XML摘要
         total_word_count = sum(len(text) for text in all_texts)
@@ -303,8 +303,8 @@ async def batch_upload_documents_xml(
         # 合并所有文本进行分析
         combined_text = combine_texts_for_analysis(all_texts)
         
-        # 使用OpenAI分析（XML格式）
-        ai_analysis_xml = analyze_with_openai_xml(combined_text)
+        # 使用OpenAI分析（XML格式，异步）
+        ai_analysis_xml = await analyze_with_openai_xml(combined_text)
         
         # 生成批量分析的XML摘要
         total_word_count = sum(len(text) for text in all_texts)
@@ -375,7 +375,7 @@ async def list_analysis_results(
     """获取分析结果列表"""
     try:
         # 游客用户返回空列表
-        if isinstance(current_user, dict) and current_user.get("is_guest"):
+        if isinstance(current_user, dict) and current_user.get("is_guest", False):
             return {
                 "message": "游客模式下无历史记录",
                 "total": 0,
